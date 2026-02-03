@@ -58,10 +58,11 @@ func TopicToMachineId(topic string) (string, bool) {
 
 // parsePayload unmarshals JSON and reads fields with flexible keys (person/PERSON, volt/Volt, etc.).
 // timeStr = from "time" key only, timestampStr = from "timestamp" key only (stored separately).
-func parsePayload(raw []byte) (serial, person string, manPower int, jobId, subJob string, stroke int, volt, amp, pf, wh float64, timeStr, timestampStr string, err error) {
+// status defaults to false if not sent.
+func parsePayload(raw []byte) (serial, person string, manPower int, jobId, subJob string, stroke int, volt, amp, pf, wh float64, timeStr, timestampStr string, status bool, err error) {
 	var m map[string]interface{}
 	if err = json.Unmarshal(raw, &m); err != nil {
-		return "", "", 0, "", "", 0, 0, 0, 0, 0, "", "", err
+		return "", "", 0, "", "", 0, 0, 0, 0, 0, "", "", false, err
 	}
 	getStr := func(keys ...string) string {
 		for _, k := range keys {
@@ -121,6 +122,24 @@ func parsePayload(raw []byte) (serial, person string, manPower int, jobId, subJo
 		}
 		return ""
 	}
+	// status: accepts bool, string "true"/"1", or number 0|1 (JSON numbers become float64)
+	getBool := func(keys ...string) bool {
+		for _, k := range keys {
+			if v, ok := m[k]; ok && v != nil {
+				switch x := v.(type) {
+				case bool:
+					return x
+				case string:
+					return strings.EqualFold(x, "true") || x == "1"
+				case float64:
+					return x != 0 // 0 -> false, 1 -> true
+				case int:
+					return x != 0
+				}
+			}
+		}
+		return false
+	}
 	serial = getStr("serial", "Serial", "SERIAL")
 	person = getStr("person", "PERSON", "Person")
 	manPower = getInt("manPower", "Man Power", "man_power", "MAN_POWER")
@@ -133,7 +152,8 @@ func parsePayload(raw []byte) (serial, person string, manPower int, jobId, subJo
 	wh = getFloat("wh", "Wh", "WH")
 	timeStr = getTimeStr("time", "TIME", "Time")           // only "time" keys
 	timestampStr = getTimeStr("timestamp", "Timestamp")   // only "timestamp" keys
-	return serial, person, manPower, jobId, subJob, stroke, volt, amp, pf, wh, timeStr, timestampStr, nil
+	status = getBool("status", "Status", "STATUS")
+	return serial, person, manPower, jobId, subJob, stroke, volt, amp, pf, wh, timeStr, timestampStr, status, nil
 }
 
 // Subscribe subscribes to machine/+/realtime and calls onMessage for each message.
@@ -146,7 +166,7 @@ func Subscribe(client mqtt.Client, onMessage func(model.MachineData) error) erro
 			log.Printf("mqtt: invalid topic %q", msg.Topic())
 			return
 		}
-		serial, person, manPower, jobId, subJob, stroke, volt, amp, pf, wh, timeStr, timestampStr, err := parsePayload(msg.Payload())
+		serial, person, manPower, jobId, subJob, stroke, volt, amp, pf, wh, timeStr, timestampStr, status, err := parsePayload(msg.Payload())
 		if err != nil {
 			log.Printf("mqtt: invalid json topic=%s err=%v", msg.Topic(), err)
 			return
@@ -183,6 +203,7 @@ func Subscribe(client mqtt.Client, onMessage func(model.MachineData) error) erro
 			Wh:        roundFloat(wh, 2),
 			Time:      timeParsed,
 			Timestamp: timestampParsed,
+			Status:    status,
 		}
 		if err := onMessage(data); err != nil {
 			log.Printf("mqtt: influx write failed topic=%s err=%v", msg.Topic(), err)

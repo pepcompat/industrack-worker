@@ -57,6 +57,7 @@ func (w *Writer) Write(ctx context.Context, d model.MachineData) error {
 		AddField("amp", d.Amp).
 		AddField("pf", d.Pf).
 		AddField("wh", d.Wh).
+		AddField("status", d.Status).
 		AddField("time_ms", d.Time.UnixMilli()).
 		AddField("timestamp_ms", d.Timestamp.UnixMilli()).
 		SetTime(pointTime)

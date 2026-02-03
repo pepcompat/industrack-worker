@@ -17,4 +17,5 @@ type MachineData struct {
 	Wh        float64   `json:"wh"`
 	Time      time.Time `json:"time"`      // from payload "time"
 	Timestamp time.Time `json:"timestamp"` // from payload "timestamp"
+	Status    bool      `json:"status"`    // from payload "status"; accepts true/false or 0|1; default false if not sent
 }
